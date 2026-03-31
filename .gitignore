@@ -1,0 +1,55 @@
+# Virtual Environment
+venv/
+.venv/
+.env/
+.env
+*.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+
+# Test / coverage
+.coverage
+htmlcov/
+
+# Build / packaging
+dist/
+build/
+*.egg-info/
+
+# Docker
+*.pid
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OCR model cache
+easyocr_models/
+
+# Local uploads / temp data
+uploads/
+temp/
+tmp/
+data/
+*.sqlite3
+*.db
+
+# Secrets / keys / certificates
+*.pem
+*.key
+*.crt
+*.p12
