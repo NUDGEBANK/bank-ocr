@@ -16,4 +16,4 @@ uvicorn app.main:app --reload --port 8000
 - `GET /health`
 - `POST /ocr/extract`
 
-Current version accepts image files such as `jpg`, `jpeg`, and `png`.
+Current version accepts image files such as `jpg`, `jpeg`, `png`, and `pdf`.
