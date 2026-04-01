@@ -9,7 +9,10 @@ from PIL import Image, UnidentifiedImageError
 
 
 MAX_FILE_SIZE = 10 * 1024 * 1024
-MAX_PDF_PAGES = 5
+MAX_PDF_PAGES = 3
+PDF_RENDER_SCALE = 1.5
+MAX_IMAGE_WIDTH = 1800
+MAX_IMAGE_HEIGHT = 1800
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".pdf"}
 
 app = FastAPI(title="bank-ocr")
@@ -45,6 +48,10 @@ def validate_filename(filename: str | None) -> str:
 
 def extract_lines_from_image_bytes(file_bytes: bytes) -> list[str]:
     image = Image.open(BytesIO(file_bytes)).convert("RGB")
+
+    if image.width > MAX_IMAGE_WIDTH or image.height > MAX_IMAGE_HEIGHT:
+        image.thumbnail((MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT))
+
     results = reader.readtext(np.array(image))
     return [text.strip() for _, text, _ in results if text.strip()]
 
@@ -58,7 +65,9 @@ def extract_lines_from_pdf_bytes(file_bytes: bytes) -> list[str]:
 
             for page_index in range(page_count):
                 page = pdf_document.load_page(page_index)
-                pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+                pixmap = page.get_pixmap(
+                    matrix=fitz.Matrix(PDF_RENDER_SCALE, PDF_RENDER_SCALE)
+                )
                 image_bytes = pixmap.tobytes("png")
                 lines.extend(extract_lines_from_image_bytes(image_bytes))
     except RuntimeError as exc:
