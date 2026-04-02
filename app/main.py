@@ -5,12 +5,12 @@ import fitz
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageEnhance, UnidentifiedImageError
 
 
 MAX_FILE_SIZE = 10 * 1024 * 1024
 MAX_PDF_PAGES = 3
-PDF_RENDER_SCALE = 1.5
+PDF_RENDER_SCALE = 2.0
 MAX_IMAGE_WIDTH = 1800
 MAX_IMAGE_HEIGHT = 1800
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".pdf"}
@@ -52,7 +52,10 @@ def extract_lines_from_image_bytes(file_bytes: bytes) -> list[str]:
     if image.width > MAX_IMAGE_WIDTH or image.height > MAX_IMAGE_HEIGHT:
         image.thumbnail((MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT))
 
-    results = reader.readtext(np.array(image))
+    # Improve OCR readability for scanned certificates without changing the OCR engine.
+    processed_image = ImageEnhance.Contrast(image.convert("L")).enhance(1.5)
+
+    results = reader.readtext(np.array(processed_image))
     return [text.strip() for _, text, _ in results if text.strip()]
 
 
@@ -65,11 +68,19 @@ def extract_lines_from_pdf_bytes(file_bytes: bytes) -> list[str]:
 
             for page_index in range(page_count):
                 page = pdf_document.load_page(page_index)
+                text_lines = [
+                    line.strip()
+                    for line in page.get_text("text").splitlines()
+                    if line.strip()
+                ]
+                lines.extend(text_lines)
+
                 pixmap = page.get_pixmap(
                     matrix=fitz.Matrix(PDF_RENDER_SCALE, PDF_RENDER_SCALE)
                 )
                 image_bytes = pixmap.tobytes("png")
-                lines.extend(extract_lines_from_image_bytes(image_bytes))
+                ocr_lines = extract_lines_from_image_bytes(image_bytes)
+                lines.extend(ocr_lines)
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail="Invalid PDF file") from exc
 
