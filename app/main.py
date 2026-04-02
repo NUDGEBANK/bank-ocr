@@ -10,9 +10,12 @@ from PIL import Image, ImageEnhance, UnidentifiedImageError
 
 MAX_FILE_SIZE = 10 * 1024 * 1024
 MAX_PDF_PAGES = 3
-PDF_RENDER_SCALE = 2.0
+PDF_RENDER_SCALE = 1.5
+PDF_RENDER_SCALE_FALLBACK = 2.0
 MAX_IMAGE_WIDTH = 1800
 MAX_IMAGE_HEIGHT = 1800
+FAST_IMAGE_MAX_WIDTH = 1400
+FAST_IMAGE_MAX_HEIGHT = 1400
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".pdf"}
 
 app = FastAPI(title="bank-ocr")
@@ -46,14 +49,20 @@ def validate_filename(filename: str | None) -> str:
     return filename
 
 
-def extract_lines_from_image_bytes(file_bytes: bytes) -> list[str]:
+def extract_lines_from_image_bytes(
+    file_bytes: bytes,
+    *,
+    max_width: int = MAX_IMAGE_WIDTH,
+    max_height: int = MAX_IMAGE_HEIGHT,
+    contrast: float = 1.5,
+) -> list[str]:
     image = Image.open(BytesIO(file_bytes)).convert("RGB")
 
-    if image.width > MAX_IMAGE_WIDTH or image.height > MAX_IMAGE_HEIGHT:
-        image.thumbnail((MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT))
+    if image.width > max_width or image.height > max_height:
+        image.thumbnail((max_width, max_height))
 
     # Improve OCR readability for scanned certificates without changing the OCR engine.
-    processed_image = ImageEnhance.Contrast(image.convert("L")).enhance(1.5)
+    processed_image = ImageEnhance.Contrast(image.convert("L")).enhance(contrast)
 
     results = reader.readtext(np.array(processed_image))
     return [text.strip() for _, text, _ in results if text.strip()]
@@ -75,12 +84,27 @@ def extract_lines_from_pdf_bytes(file_bytes: bytes) -> list[str]:
                 ]
                 lines.extend(text_lines)
 
+                # Fast first pass: lighter render and OCR settings.
                 pixmap = page.get_pixmap(
                     matrix=fitz.Matrix(PDF_RENDER_SCALE, PDF_RENDER_SCALE)
                 )
                 image_bytes = pixmap.tobytes("png")
-                ocr_lines = extract_lines_from_image_bytes(image_bytes)
-                lines.extend(ocr_lines)
+                fast_ocr_lines = extract_lines_from_image_bytes(
+                    image_bytes,
+                    max_width=FAST_IMAGE_MAX_WIDTH,
+                    max_height=FAST_IMAGE_MAX_HEIGHT,
+                    contrast=1.2,
+                )
+                lines.extend(fast_ocr_lines)
+
+                # Retry with higher quality OCR only when the first pass found nothing.
+                if not text_lines and not fast_ocr_lines:
+                    fallback_pixmap = page.get_pixmap(
+                        matrix=fitz.Matrix(PDF_RENDER_SCALE_FALLBACK, PDF_RENDER_SCALE_FALLBACK)
+                    )
+                    fallback_image_bytes = fallback_pixmap.tobytes("png")
+                    fallback_ocr_lines = extract_lines_from_image_bytes(fallback_image_bytes)
+                    lines.extend(fallback_ocr_lines)
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail="Invalid PDF file") from exc
 
